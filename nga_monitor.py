@@ -10,20 +10,39 @@ DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=1985f68a2f
 # ======================================================
 
 def get_username(uid, headers):
-    """根据UID获取NGA用户名"""
+    """根据UID获取NGA用户名（增强版匹配规则）"""
     try:
         url = f"https://bbs.nga.cn/nuke.php?func=ucp&uid={uid}"
         resp = requests.get(url, headers=headers, timeout=10)
         resp.encoding = "utf-8"
         
-        # 匹配用户名（NGA用户主页的标题格式：[用户名]的个人主页 - NGA玩家社区）
-        name_match = re.search(r"\[(.*?)\]的个人主页", resp.text)
-        if name_match:
-            return name_match.group(1)
+        # 调试：打印页面标题（方便排查匹配问题）
+        title_match = re.search(r"<title>(.*?)</title>", resp.text)
+        if title_match:
+            page_title = title_match.group(1)
+            print(f"🔍 用户{uid}的页面标题：{page_title}")
         else:
-            return f"用户{uid}"  # 匹配不到时返回UID兜底
+            print(f"❌ 用户{uid}未匹配到页面标题")
+            return f"用户{uid}"
+
+        # 规则1：匹配 [用户名]的个人主页（原规则）
+        name_rule1 = re.search(r"\[(.*?)\]的个人主页", resp.text)
+        # 规则2：匹配 用户名 - 个人主页（兼容其他格式）
+        name_rule2 = re.search(r"(.+?) - 个人主页", resp.text)
+        # 规则3：匹配页面内的用户名（最强兜底）
+        name_rule3 = re.search(r'<meta name="author" content="(.*?)"', resp.text)
+
+        if name_rule1:
+            return name_rule1.group(1)
+        elif name_rule2:
+            return name_rule2.group(1)
+        elif name_rule3:
+            return name_rule3.group(1)
+        else:
+            print(f"❌ 用户{uid}所有规则均匹配不到用户名")
+            return f"用户{uid}"
     except Exception as e:
-        print(f"❌ 获取用户{uid}名称失败: {e}")
+        print(f"❌ 获取用户{uid}名称失败: {str(e)}")
         return f"用户{uid}"
 
 def send_dingtalk(username, uid, tid):
@@ -83,7 +102,7 @@ def main():
             else:
                 print(f"ℹ️ {username}（UID：{uid}）无新发言")
         except Exception as e:
-            print(f"❌ 处理{username}（UID：{uid}）出错: {e}")
+            print(f"❌ 处理{username}（UID：{uid}）出错: {str(e)}")
     
     # 保存最新TID到文件
     with open(last_tid_file, "w") as f:
